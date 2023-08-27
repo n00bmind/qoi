@@ -1,0 +1,3 @@
+
+- Make a metaprogram that downloads the benchmark images suite from https://qoiformat.org/benchmark/ and runs either the source benchmark or a ported version and displays the results
+
