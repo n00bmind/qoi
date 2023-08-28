@@ -1,2 +1,2 @@
-jai src/qoi_viewer.jai
+jai src/build.jai
 
