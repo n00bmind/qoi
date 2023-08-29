@@ -74,7 +74,8 @@ QOIDecode :: ( input: []u8, reference: []u8 = .[] ) -> ok: bool, desc: QOIDesc
         }
     }
 
-    while( src - input.data < input.count )
+    tgtEnd := desc.rawData.data + desc.width * desc.height * desc.channels;
+    while( tgt < tgtEnd )
     {
         advance := 0;
         offset := tgt - desc.rawData.data;
@@ -104,12 +105,11 @@ QOIDecode :: ( input: []u8, reference: []u8 = .[] ) -> ok: bool, desc: QOIDesc
 
         case;
 
-            tagValue  := src[0] & ~QOI_MASK_2;
-
             if src[0] & QOI_MASK_2 ==
             {
             case QOI_OP_INDEX;
-                px = seen[tagValue];
+                index: u8 = src[0] & ~QOI_MASK_2;
+                px = seen[index];
                 advance += 1;
 
                 if reference
@@ -131,7 +131,8 @@ QOIDecode :: ( input: []u8, reference: []u8 = .[] ) -> ok: bool, desc: QOIDesc
                             offset, px, refTgt[0], refTgt[1], refTgt[2], refTgt[3] );
 
             case QOI_OP_LUMA;
-                dg    := tagValue - 32;
+                luma: u8 = src[0] & ~QOI_MASK_2;
+                dg    := luma - 32;
                 dr_dg := ((src[1] >> 4) & 0xF) - 8;
                 db_dg := ((src[1] >> 0) & 0xF) - 8;
 
@@ -148,8 +149,9 @@ QOIDecode :: ( input: []u8, reference: []u8 = .[] ) -> ok: bool, desc: QOIDesc
                             offset, px, refTgt[0], refTgt[1], refTgt[2], refTgt[3] );
 
             case QOI_OP_RUN;
+                runLen: u8 = src[0] & ~QOI_MASK_2;
                 // Run length already has a -1 bias, but we also advance tgt by 1 on every loop iteration below..
-                for 0..cast(s8)tagValue - 1
+                for 0..cast(s8)runLen - 1
                 {
                     PushPixel( *tgt, px, desc.channels );
                 }
@@ -250,7 +252,8 @@ QOIEncode :: ( input: []u8, desc: QOIDesc ) -> ok: bool, encodedOut: []u8
     run: u8 = 0;
     seen: [64]Pixel;
 
-    while( src - input.data < inputSize )
+    srcEnd := input.data + inputSize;
+    while( src < srcEnd )
     {
         px.r = src[0];
         px.g = src[1];
