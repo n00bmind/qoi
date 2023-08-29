@@ -4,8 +4,9 @@ Pixel :: struct
     r, g, b, a: u8;
 }
 
-QOIInfo :: struct
+QOIDesc :: struct
 {
+    // TODO Take this out of here
     rawData:       []u8;
     width, height: s32;
     channels:      s8;
@@ -13,38 +14,42 @@ QOIInfo :: struct
 }
 
 
-QOIDecode :: ( bytes: []u8, reference: []u8 = .[] ) -> bool, QOIInfo
+QOIDecode :: ( input: []u8, reference: []u8 = .[] ) -> ok: bool, desc: QOIDesc
 {
-    srcBytes := bytes.data;
+    src := input.data;
+    desc : QOIDesc;
     header : *QOIHeader;
-    info : QOIInfo;
 
-    header = xx srcBytes;
+    header = xx src;
+    // TODO Validation & logging
     if cast(string) header.magic != "qoif"
-        return false, info;
+        return false, desc;
 
     // Big endian WAT
-    info.width = xx ((header.width & 0xFF) << 24)
+    desc.width = xx ((header.width & 0xFF) << 24)
         | ((header.width & 0xFF00) << 8)
         | ((header.width & 0xFF0000) >> 8)
         | ((header.width & 0xFF000000) >> 24);
-    info.height = xx ((header.height & 0xFF) << 24)
+    desc.height = xx ((header.height & 0xFF) << 24)
         | ((header.height & 0xFF00) << 8)
         | ((header.height & 0xFF0000) >> 8)
         | ((header.height & 0xFF000000) >> 24);
-    info.channels = xx header.channels;
-    info.colorspace = xx header.colorspace;
+    desc.channels = xx header.channels;
+    desc.colorspace = xx header.colorspace;
 
     if reference
     {
-        sizeBytes := info.width * info.height * info.channels;
+        sizeBytes := desc.width * desc.height * desc.channels;
         assert( reference.count == sizeBytes, "Ref: size mismatch, found %, wanted %\n", sizeBytes, reference.count );
     }
 
-    srcBytes += size_of(QOIHeader);
+    src += size_of(QOIHeader);
 
-    info.rawData = NewArray( info.width * info.height * info.channels, u8 );
-    tgtBytes, refTgt := info.rawData.data;
+    desc.rawData = NewArray( desc.width * desc.height * desc.channels, u8 );
+    if !desc.rawData
+        return false, desc;
+
+    tgt, refTgt := desc.rawData.data;
 
     if reference
         refTgt = reference.data;
@@ -69,53 +74,52 @@ QOIDecode :: ( bytes: []u8, reference: []u8 = .[] ) -> bool, QOIInfo
         }
     }
 
-    while( (srcBytes - bytes.data < bytes.count) && (tgtBytes - info.rawData.data < info.width * info.height * info.channels) )
+    while( src - input.data < input.count )
     {
         advance := 0;
-        offset := tgtBytes - info.rawData.data;
+        offset := tgt - desc.rawData.data;
 
-        if srcBytes[0] ==
+        if src[0] ==
         {
         case QOI_OP_RGB;
-            px.r = srcBytes[1];
-            px.g = srcBytes[2];
-            px.b = srcBytes[3];
+            px.r = src[1];
+            px.g = src[2];
+            px.b = src[3];
             advance += 4;
 
             if reference
-                assert( bits_equal( *px, refTgt, info.channels ), "Ref: offset % data mismatch: found %, wanted { %, %, %, (%) }\n",
+                assert( bits_equal( *px, refTgt, desc.channels ), "Ref: offset % data mismatch: found %, wanted { %, %, %, (%) }\n",
                         offset, px, refTgt[0], refTgt[1], refTgt[2], refTgt[3] );
 
         case QOI_OP_RGBA;
-            px.r = srcBytes[1];
-            px.g = srcBytes[2];
-            px.b = srcBytes[3];
-            px.a = srcBytes[4];
+            px.r = src[1];
+            px.g = src[2];
+            px.b = src[3];
+            px.a = src[4];
             advance += 5;
 
             if reference
-                assert( bits_equal( *px, refTgt, info.channels ), "Ref: offset % data mismatch: found %, wanted { %, %, %, (%) }\n",
+                assert( bits_equal( *px, refTgt, desc.channels ), "Ref: offset % data mismatch: found %, wanted { %, %, %, (%) }\n",
                         offset, px, refTgt[0], refTgt[1], refTgt[2], refTgt[3] );
 
         case;
 
-            twoBitTag := srcBytes[0] >> 6;
-            tagValue  := srcBytes[0] & 0x3F;
+            tagValue  := src[0] & ~QOI_MASK_2;
 
-            if twoBitTag ==
+            if src[0] & QOI_MASK_2 ==
             {
             case QOI_OP_INDEX;
                 px = seen[tagValue];
                 advance += 1;
 
                 if reference
-                    assert( bits_equal( *px, refTgt, info.channels ), "Ref: offset % data mismatch: found %, wanted { %, %, %, (%) }\n",
+                    assert( bits_equal( *px, refTgt, desc.channels ), "Ref: offset % data mismatch: found %, wanted { %, %, %, (%) }\n",
                             offset, px, refTgt[0], refTgt[1], refTgt[2], refTgt[3] );
 
             case QOI_OP_DIFF;
-                dr := ((srcBytes[0] >> 4) & 0x3) - 2;
-                dg := ((srcBytes[0] >> 2) & 0x3) - 2;
-                db := ((srcBytes[0] >> 0) & 0x3) - 2;
+                dr := ((src[0] >> 4) & 0x3) - 2;
+                dg := ((src[0] >> 2) & 0x3) - 2;
+                db := ((src[0] >> 0) & 0x3) - 2;
                 px.r += dr;
                 px.g += dg;
                 px.b += db;
@@ -123,13 +127,13 @@ QOIDecode :: ( bytes: []u8, reference: []u8 = .[] ) -> bool, QOIInfo
                 advance += 1;
 
                 if reference
-                    assert( bits_equal( *px, refTgt, info.channels ), "Ref: offset % data mismatch: found %, wanted { %, %, %, (%) }\n",
+                    assert( bits_equal( *px, refTgt, desc.channels ), "Ref: offset % data mismatch: found %, wanted { %, %, %, (%) }\n",
                             offset, px, refTgt[0], refTgt[1], refTgt[2], refTgt[3] );
 
             case QOI_OP_LUMA;
                 dg    := tagValue - 32;
-                dr_dg := ((srcBytes[1] >> 4) & 0xF) - 8;
-                db_dg := ((srcBytes[1] >> 0) & 0xF) - 8;
+                dr_dg := ((src[1] >> 4) & 0xF) - 8;
+                db_dg := ((src[1] >> 0) & 0xF) - 8;
 
                 dr    := dr_dg + dg;
                 db    := db_dg + dg;
@@ -140,46 +144,46 @@ QOIDecode :: ( bytes: []u8, reference: []u8 = .[] ) -> bool, QOIInfo
                 advance += 2;
 
                 if reference
-                    assert( bits_equal( *px, refTgt, info.channels ), "Ref: offset % data mismatch: found %, wanted { %, %, %, (%) }\n",
+                    assert( bits_equal( *px, refTgt, desc.channels ), "Ref: offset % data mismatch: found %, wanted { %, %, %, (%) }\n",
                             offset, px, refTgt[0], refTgt[1], refTgt[2], refTgt[3] );
 
             case QOI_OP_RUN;
-                // Run length already has a -1 bias, but we also advance tgt by 1 at the very end..
+                // Run length already has a -1 bias, but we also advance tgt by 1 on every loop iteration below..
                 for 0..cast(s8)tagValue - 1
                 {
-                    PushPixel( *tgtBytes, px, info.channels );
+                    PushPixel( *tgt, px, desc.channels );
                 }
 
                 if reference
                 {
-                    refTgt = reference.data + (tgtBytes - info.rawData.data);
-                    assert( bits_equal( *px, refTgt, info.channels ), "Ref: offset % data mismatch: found %, wanted { %, %, %, (%) }\n",
+                    refTgt = reference.data + (tgt - desc.rawData.data);
+                    assert( bits_equal( *px, refTgt, desc.channels ), "Ref: offset % data mismatch: found %, wanted { %, %, %, (%) }\n",
                             offset, px, refTgt[0], refTgt[1], refTgt[2], refTgt[3] );
                 }
                 advance += 1;
             }
         }
 
-        PushPixel( *tgtBytes, px, info.channels );
+        PushPixel( *tgt, px, desc.channels );
 
         seen[ (px.r * 3 + px.g * 5 + px.b * 7 + px.a * 11) & 0x3F ] = px;
 
         assert( advance != 0, "Stuck in place!" );
-        srcBytes += advance;
+        src += advance;
 
         if reference
-            refTgt = reference.data + (tgtBytes - info.rawData.data);
+            refTgt = reference.data + (tgt - desc.rawData.data);
     }
 
     // TODO Handle either missing src bytes or missing tgt pixel data
     // TODO Check post-amble
 
-    return true, info;
+    return true, desc;
 }
 
-QOILoad :: ( path: string, reference: []u8 = .[] ) -> bool, QOIInfo
+QOIRead :: ( path: string, reference: []u8 = .[] ) -> bool, QOIDesc
 {
-    result: QOIInfo;
+    result: QOIDesc;
 
     contentStr, ok := read_entire_file( path, false, true );
     if ok
@@ -194,9 +198,170 @@ QOILoad :: ( path: string, reference: []u8 = .[] ) -> bool, QOIInfo
 }
 
 
+QOIEncode :: ( input: []u8, desc: QOIDesc ) -> ok: bool, encodedOut: []u8
+{
+    if !input
+    {
+        log( "Error: Invalid input array\n" );
+        return false, .[];
+    }
 
-#scope_module
+    if( desc.width == 0 || desc.height == 0 ||
+        desc.channels < 3 || desc.channels > 4 )
+    {
+        log( "Error: Invalid input image description\n" );
+        return false, .[];
+    }
 
+    inputSize := desc.width * desc.height * desc.channels;
+    if input.count != inputSize
+    {
+        log( "Error: Invalid input array dimensions (given %, want %)\n", input.count, inputSize );
+        return false, .[];
+    }
+
+    // Worst case
+    // TODO Use a bucket array?
+    maxSize := desc.width * desc.height * (desc.channels + 1)
+        + size_of(QOIHeader) + size_of(type_of(qoiEpilogue));
+
+    encodedOut := NewArray( maxSize, u8 );
+    if !encodedOut
+    {
+        log( "Error: out of memory\n" );
+        return false, .[];
+    }
+
+    tgt := encodedOut.data;
+
+    QOI_MAGIC :u32 : (#char "q" << 24) | (#char "o" << 16) | (#char "i" <<  8) | (#char "f");
+    QOIWrite32( *tgt, QOI_MAGIC );
+    QOIWrite32( *tgt, xx desc.width );
+    QOIWrite32( *tgt, xx desc.height );
+    tgt[0] = xx desc.channels;
+    tgt[1] = xx desc.colorspace;
+    tgt += 2;
+
+    src := input.data;
+    lastPxOffset := inputSize - desc.channels;
+
+    px_prev := Pixel.{ a = 255 };
+    px: Pixel = px_prev;
+    run: u8 = 0;
+    seen: [64]Pixel;
+
+    while( src - input.data < inputSize )
+    {
+        px.r = src[0];
+        px.g = src[1];
+        px.b = src[2];
+
+        if( desc.channels == 4 )
+        {
+            px.a = src[3];
+            src += 4;
+        }
+        else
+            src += 3;
+
+        if( bits_equal( *px, *px_prev ) )
+        {
+            run += 1;
+            if( run == 62 || src - input.data == lastPxOffset )
+            {
+                <<tgt = QOI_OP_RUN | (run - 1);
+                tgt += 1;
+                run = 0;
+            }
+        }
+        else
+        {
+            if( run > 0 )
+            {
+                <<tgt = QOI_OP_RUN | (run - 1);
+                tgt += 1;
+                run = 0;
+            }
+
+            index := (px.r * 3 + px.g * 5 + px.b * 7 + px.a * 11) & 0x3F;
+
+            if( bits_equal( *seen[index], *px ) )
+            {
+                <<tgt = QOI_OP_INDEX | index;
+                tgt += 1;
+            }
+            else
+            {
+                seen[index] = px;
+
+                if( px.a == px_prev.a )
+                {
+                    // TODO Unsigned?
+                    dr: s8 = xx (px.r - px_prev.r);
+                    dg: s8 = xx (px.g - px_prev.g);
+                    db: s8 = xx (px.b - px_prev.b);
+
+                    dr_dg: s8 = dr - dg;
+                    db_dg: s8 = db - dg;
+
+                    if( dr > -3 && dr < 2 &&
+                        dg > -3 && dg < 2 &&
+                        db > -3 && db < 2 )
+                    {
+                        // TODO Precedence?
+                        tgt[0] = QOI_OP_DIFF | (cast(u8)(dr + 2) << 4) | (cast(u8)(dg + 2) << 2) | cast(u8)(db + 2);
+                        tgt += 1;
+                    }
+                    else if( dr_dg >  -9 && dr_dg <  8 &&
+                             dg    > -33 && dg    < 32 &&
+                             db_dg >  -9 && db_dg <  8 )
+                    {
+                        // TODO Precedence?
+                        tgt[0] = QOI_OP_LUMA                | cast(u8)(dg    + 32);
+                        tgt[1] = (cast(u8)(dr_dg + 8) << 4) | cast(u8)(db_dg +  8);
+                        tgt += 2;
+                    }
+                    else
+                    {
+                        tgt[0] = QOI_OP_RGB;
+                        tgt[1] = px.r;
+                        tgt[2] = px.g;
+                        tgt[3] = px.b;
+                        tgt += 4;
+                    }
+                }
+                else
+                {
+                    tgt[0] = QOI_OP_RGBA;
+                    tgt[1] = px.r;
+                    tgt[2] = px.g;
+                    tgt[3] = px.b;
+                    tgt[4] = px.a;
+                    tgt += 5;
+                }
+            }
+        }
+
+        px_prev = px;
+    }
+
+    for qoiEpilogue
+    {
+        <<tgt = it;
+        tgt += 1;
+    }
+
+    // TODO This is kind of wasteful
+    encodedOut.count = tgt - encodedOut.data;
+    return true, encodedOut;
+}
+
+
+#scope_file
+
+
+#import "Basic";
+#import "File";
 
 QOIHeader :: struct
 {
@@ -206,14 +371,24 @@ QOIHeader :: struct
     colorspace:    u8;
 } #no_padding
 
-QOI_OP_RGB   :: 0xFE;
-QOI_OP_RGBA  :: 0xFF;
-QOI_OP_INDEX :: 0;
-QOI_OP_DIFF  :: 1;
-QOI_OP_LUMA  :: 2;
-QOI_OP_RUN   :: 3;
+QOI_OP_INDEX  :u8 : 0x00; /* 00xxxxxx */
+QOI_OP_DIFF   :u8 : 0x40; /* 01xxxxxx */
+QOI_OP_LUMA   :u8 : 0x80; /* 10xxxxxx */
+QOI_OP_RUN    :u8 : 0xc0; /* 11xxxxxx */
+QOI_OP_RGB    :u8 : 0xfe; /* 11111110 */
+QOI_OP_RGBA   :u8 : 0xff; /* 11111111 */
 
-#scope_file
+QOI_MASK_2    :u8 : 0xc0; /* 11000000 */
 
-#import "Basic";
-#import "File";
+qoiEpilogue: [8]u8 = .[ 0,0,0,0,0,0,0,1 ];
+
+
+QOIWrite32 :: ( tgt: **u8, v: u32 )
+{
+    (<<tgt)[0] = xx ((0xff000000 & v) >> 24);
+    (<<tgt)[1] = xx ((0x00ff0000 & v) >> 16);
+    (<<tgt)[2] = xx ((0x0000ff00 & v) >> 8);
+    (<<tgt)[3] = xx ((0x000000ff & v));
+    (<<tgt) += 4;
+}
+

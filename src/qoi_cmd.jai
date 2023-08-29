@@ -5,7 +5,7 @@ TestDecodePath :: ( filepath: string, successCount: *int, totalCount: *int ) -> 
     print( "-> Comparing file % against raw dump..\n", filepath );
 
     rawStr, rawOk := read_entire_file( rawPath, false, false );
-    loadedOk, info := QOILoad( filepath, xx rawStr );
+    loadedOk, info := QOIRead( filepath, xx rawStr );
 
     equal := false;
     if loadedOk
