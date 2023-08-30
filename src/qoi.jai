@@ -196,6 +196,8 @@ QOIRead :: ( path: string, reference: []u8 = .[] ) -> bool, QOIDesc
         ok = false;
     }
 
+    free( contentStr.data );
+
     return ok, result;
 }
 
@@ -245,7 +247,6 @@ QOIEncode :: ( input: []u8, desc: QOIDesc ) -> ok: bool, encodedOut: []u8
     tgt += 2;
 
     src := input.data;
-    lastPxOffset := inputSize - desc.channels;
 
     px_prev := Pixel.{ a = 255 };
     px: Pixel = px_prev;
@@ -253,6 +254,7 @@ QOIEncode :: ( input: []u8, desc: QOIDesc ) -> ok: bool, encodedOut: []u8
     seen: [64]Pixel;
 
     srcEnd := input.data + inputSize;
+    lastPx := input.data + inputSize - desc.channels;
     while( src < srcEnd )
     {
         px.r = src[0];
@@ -260,17 +262,12 @@ QOIEncode :: ( input: []u8, desc: QOIDesc ) -> ok: bool, encodedOut: []u8
         px.b = src[2];
 
         if( desc.channels == 4 )
-        {
             px.a = src[3];
-            src += 4;
-        }
-        else
-            src += 3;
 
         if( bits_equal( *px, *px_prev ) )
         {
             run += 1;
-            if( run == 62 || src - input.data == lastPxOffset )
+            if( run == 62 || src == lastPx )
             {
                 <<tgt = QOI_OP_RUN | (run - 1);
                 tgt += 1;
@@ -300,9 +297,9 @@ QOIEncode :: ( input: []u8, desc: QOIDesc ) -> ok: bool, encodedOut: []u8
                 if( px.a == px_prev.a )
                 {
                     // TODO Unsigned?
-                    dr: s8 = xx (px.r - px_prev.r);
-                    dg: s8 = xx (px.g - px_prev.g);
-                    db: s8 = xx (px.b - px_prev.b);
+                    dr: s8 = cast,no_check(s8) (px.r - px_prev.r);
+                    dg: s8 = cast,no_check(s8) (px.g - px_prev.g);
+                    db: s8 = cast,no_check(s8) (px.b - px_prev.b);
 
                     dr_dg: s8 = dr - dg;
                     db_dg: s8 = db - dg;
@@ -312,7 +309,8 @@ QOIEncode :: ( input: []u8, desc: QOIDesc ) -> ok: bool, encodedOut: []u8
                         db > -3 && db < 2 )
                     {
                         // TODO Precedence?
-                        tgt[0] = QOI_OP_DIFF | (cast(u8)(dr + 2) << 4) | (cast(u8)(dg + 2) << 2) | cast(u8)(db + 2);
+                        tgt[0] = QOI_OP_DIFF | (cast,no_check(u8)(dr + 2) << 4)
+                            | (cast,no_check(u8)(dg + 2) << 2) | cast,no_check(u8)(db + 2);
                         tgt += 1;
                     }
                     else if( dr_dg >  -9 && dr_dg <  8 &&
@@ -320,8 +318,8 @@ QOIEncode :: ( input: []u8, desc: QOIDesc ) -> ok: bool, encodedOut: []u8
                              db_dg >  -9 && db_dg <  8 )
                     {
                         // TODO Precedence?
-                        tgt[0] = QOI_OP_LUMA                | cast(u8)(dg    + 32);
-                        tgt[1] = (cast(u8)(dr_dg + 8) << 4) | cast(u8)(db_dg +  8);
+                        tgt[0] = QOI_OP_LUMA                         | cast,no_check(u8)(dg    + 32);
+                        tgt[1] = (cast,no_check(u8)(dr_dg + 8) << 4) | cast,no_check(u8)(db_dg +  8);
                         tgt += 2;
                     }
                     else
@@ -346,6 +344,7 @@ QOIEncode :: ( input: []u8, desc: QOIDesc ) -> ok: bool, encodedOut: []u8
         }
 
         px_prev = px;
+        src += desc.channels;
     }
 
     for qoiEpilogue
@@ -358,6 +357,10 @@ QOIEncode :: ( input: []u8, desc: QOIDesc ) -> ok: bool, encodedOut: []u8
     encodedOut.count = tgt - encodedOut.data;
     return true, encodedOut;
 }
+
+
+// TODO QOIWrite
+// TODO QOIWrite
 
 
 #scope_file

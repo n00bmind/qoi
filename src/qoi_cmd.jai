@@ -1,61 +1,101 @@
 
-TestDecodePath :: ( filepath: string, successCount: *int, totalCount: *int ) -> bool
+TestPath :: ( filepath: string, successCount: *int, totalCount: *int ) -> bool
 {
+    <<totalCount += 1;
+
     rawPath := tprint( "%.raw", filepath );
-    print( "-> Comparing file % against raw dump..\n", filepath );
+    log( "-> Comparing file % against %..\n", filepath, rawPath );
 
-    rawStr, rawOk := read_entire_file( rawPath, false, false );
-    loadedOk, info := QOIRead( filepath, xx rawStr );
-
-    equal := false;
-    if loadedOk
+    input, inputOk := read_entire_file( filepath, false, true );
+    if( !inputOk )
     {
-        if rawOk
+        log( "Error: Couldn't open % for reading\n", filepath );
+        return false;
+    }
+    defer free( input.data );
+
+    rawInput, rawInputOk := read_entire_file( rawPath, false, false );
+    if( !rawInputOk )
+    {
+        log( "Error: Couldn't open '%' for reading\n", rawPath );
+        return false;
+    }
+    defer free( rawInput.data );
+
+    decodedOk, desc := QOIDecode( xx input, xx rawInput );
+    if( !decodedOk )
+    {
+        log( "Error: Failed decoding image data\n" );
+        return false;
+    }
+    defer free( desc.rawData.data );
+
+    // Compare
+    decodedSize := desc.rawData.count;
+    log( "Decoded size: % / Target size: %\n", decodedSize, rawInput.count );
+
+    equal := true;
+    if decodedSize == rawInput.count
+    {
+        src := desc.rawData.data;
+        tgt := rawInput.data;
+        for 0 .. desc.width * desc.height - 1
         {
-            // Compare
-            decodedSize := info.rawData.count;
-            print( "Decoded size: % / Target size: %\n", decodedSize, rawStr.count );
-
-            if decodedSize == rawStr.count
+            if !bits_equal( src + it, tgt + it, desc.channels )
             {
-                equal = true;
-                src := info.rawData.data;
-                tgt := rawStr.data;
-                for 0 .. info.width * info.height - 1
+                if( desc.channels == 3 )
                 {
-                    if !bits_equal( src + it, tgt + it, info.channels )
-                    {
-                        if( info.channels == 3 )
-                        {
-                            print( "Pixel #% differs: want { %, %, % }, have { %, %, % }\n",
-                                   it, tgt[it + 0], tgt[it + 1], tgt[it + 2], src[it + 0], src[it + 1], src[it + 2] );
-                        }
-                        else
-                        {
-                            assert( info.channels == 4, "Unsupported channel count: %\n", info.channels );
-                            print( "Pixel #% differs: want { %, %, %, % }, have { %, %, %, % }\n",
-                                   it, tgt[it + 0], tgt[it + 1], tgt[it + 2], tgt[it + 3], src[it + 0], src[it + 1], src[it + 2], src[it + 3] );
-                        }
-                        equal = false;
-                        break;
-                    }
+                    log( "Pixel #% differs: want { %, %, % }, have { %, %, % }\n",
+                         it, tgt[it + 0], tgt[it + 1], tgt[it + 2], src[it + 0], src[it + 1], src[it + 2] );
                 }
+                else
+                {
+                    assert( desc.channels == 4, "Unsupported channel count: %\n", desc.channels );
+                    log( "Pixel #% differs: want { %, %, %, % }, have { %, %, %, % }\n",
+                         it, tgt[it + 0], tgt[it + 1], tgt[it + 2], tgt[it + 3], src[it + 0], src[it + 1], src[it + 2], src[it + 3] );
+                }
+                equal = false;
+                break;
+            }
+        }
+    }
+    else
+        equal = false;
 
-                if equal
-                {
-                    print( "OK.\n" );
-                }
+
+    if equal
+    {
+        log( "Decoded OK.\n" );
+
+        //encodedOk, encoded := QOIEncode( desc.rawData, desc );
+        encodedOk, encoded := QOIEncode( xx rawInput, desc );
+        if( !encodedOk )
+        {
+            log( "Error: Failed encoding image data\n" );
+            return false;
+        }
+        defer free( encoded.data );
+
+        encodedPath := tprint( "%.test", filepath );
+        write_entire_file( encodedPath, encoded.data, encoded.count );
+
+        log( "Encoded size: % / Target size: %\n", encoded.count, input.count );
+        if( encoded.count == input.count )
+        {
+            firstDiff := first_different_byte( encoded.data, input.data, xx encoded.count ); 
+            if( firstDiff == xx encoded.count )
+                log( "Encoded OK.\n" );
+            else
+            {
+                log( "Encoded contents differ at byte %\n", firstDiff );
+                equal = false;
             }
         }
         else
-            print( "Couldn't open '%' for reading\n", rawPath );
+            equal = false;
     }
 
-    free( info.rawData.data );
-    free( rawStr.data );
-
     <<successCount += xx equal;
-    <<totalCount += 1;
     return equal;
 }
 
@@ -87,13 +127,13 @@ main :: ()
         {
             if info.is_directory || path_extension( info.full_name ) != "qoi"
                 return;
-            TestDecodePath( info.full_name, *successCount, *totalCount );
+            TestPath( info.full_name, *successCount, *totalCount );
         }
 
         visit_files( path, true, null, visitor );
     }
     else
-        TestDecodePath( path, *successCount, *totalCount );
+        TestPath( path, *successCount, *totalCount );
 
     print( "\n% files processed, % OK.\n", totalCount, successCount );
 }
