@@ -3,16 +3,62 @@ TestPath :: ( filepath: string, successCount: *int, totalCount: *int ) -> bool
 {
     <<totalCount += 1;
 
+    pngPath := tprint( "%.png", filepath );
     rawPath := tprint( "%.raw", filepath );
-    log( "-> Comparing file % against %..\n", filepath, rawPath );
+    log( "-> Comparing file % against % and %..\n", filepath, pngPath, rawPath );
 
-    input, inputOk := read_entire_file( filepath, false, true );
-    if( !inputOk )
+    w, h, channels: s32;
+    rawDataBlock := stbi_load( temp_c_string( pngPath ), *w, *h, *channels, 0 );
+    if !rawDataBlock
+    {
+        log( "Error: Couldn't load png '%'.", pngPath, flags=.ERROR );
+        return false;
+    }
+    defer stbi_image_free( rawDataBlock );
+
+    // TODO Is there syntax for this?
+    //rawData: []u8 = { rawDataBlock, w * h * channels };
+    rawData: []u8;
+    rawData.data = rawDataBlock;
+    rawData.count = w * h * channels;
+    pngDesc := QOIDesc.{ width = w, height = h, channels = xx channels };
+
+    encodedOk, encoded := QOIEncode( rawData, pngDesc );
+    if( !encodedOk )
+    {
+        log( "Error: Failed encoding image data\n" );
+        return false;
+    }
+    defer free( encoded.data );
+
+    qoiInput, qoiInputOk := read_entire_file( filepath, false, true );
+    if( !qoiInputOk )
     {
         log( "Error: Couldn't open % for reading\n", filepath );
         return false;
     }
-    defer free( input.data );
+    defer free( qoiInput.data );
+
+    equal := false;
+    log( "Encoded size: % / Target size: %\n", encoded.count, qoiInput.count );
+    if( encoded.count == qoiInput.count )
+    {
+        firstDiff := first_different_byte( encoded.data, qoiInput.data, xx encoded.count ); 
+        if( firstDiff == xx encoded.count )
+        {
+            log( "Encoded OK.\n" );
+            equal = true;
+        }
+        else
+        {
+            log( "Encoded contents differ at byte %\n", firstDiff );
+        }
+    }
+
+
+    if( !equal )
+        return false;
+
 
     rawInput, rawInputOk := read_entire_file( rawPath, false, false );
     if( !rawInputOk )
@@ -22,35 +68,35 @@ TestPath :: ( filepath: string, successCount: *int, totalCount: *int ) -> bool
     }
     defer free( rawInput.data );
 
-    decodedOk, desc := QOIDecode( xx input, xx rawInput );
+    decodedOk, qoiDesc := QOIDecode( xx qoiInput, xx rawInput );
     if( !decodedOk )
     {
         log( "Error: Failed decoding image data\n" );
         return false;
     }
-    defer free( desc.rawData.data );
+    defer free( qoiDesc.rawData.data );
 
     // Compare
-    decodedSize := desc.rawData.count;
+    decodedSize := qoiDesc.rawData.count;
     log( "Decoded size: % / Target size: %\n", decodedSize, rawInput.count );
 
-    equal := true;
+    equal = true;
     if decodedSize == rawInput.count
     {
-        src := desc.rawData.data;
+        src := qoiDesc.rawData.data;
         tgt := rawInput.data;
-        for 0 .. desc.width * desc.height - 1
+        for 0 .. qoiDesc.width * qoiDesc.height - 1
         {
-            if !bits_equal( src + it, tgt + it, desc.channels )
+            if !bits_equal( src + it, tgt + it, qoiDesc.channels )
             {
-                if( desc.channels == 3 )
+                if( qoiDesc.channels == 3 )
                 {
                     log( "Pixel #% differs: want { %, %, % }, have { %, %, % }\n",
                          it, tgt[it + 0], tgt[it + 1], tgt[it + 2], src[it + 0], src[it + 1], src[it + 2] );
                 }
                 else
                 {
-                    assert( desc.channels == 4, "Unsupported channel count: %\n", desc.channels );
+                    assert( qoiDesc.channels == 4, "Unsupported channel count: %\n", qoiDesc.channels );
                     log( "Pixel #% differs: want { %, %, %, % }, have { %, %, %, % }\n",
                          it, tgt[it + 0], tgt[it + 1], tgt[it + 2], tgt[it + 3], src[it + 0], src[it + 1], src[it + 2], src[it + 3] );
                 }
@@ -63,36 +109,39 @@ TestPath :: ( filepath: string, successCount: *int, totalCount: *int ) -> bool
         equal = false;
 
 
-    if equal
+    #if false
     {
-        log( "Decoded OK.\n" );
-
-        //encodedOk, encoded := QOIEncode( desc.rawData, desc );
-        encodedOk, encoded := QOIEncode( xx rawInput, desc );
-        if( !encodedOk )
+        if equal
         {
-            log( "Error: Failed encoding image data\n" );
-            return false;
-        }
-        defer free( encoded.data );
+            log( "Decoded OK.\n" );
 
-        encodedPath := tprint( "%.test", filepath );
-        write_entire_file( encodedPath, encoded.data, encoded.count );
-
-        log( "Encoded size: % / Target size: %\n", encoded.count, input.count );
-        if( encoded.count == input.count )
-        {
-            firstDiff := first_different_byte( encoded.data, input.data, xx encoded.count ); 
-            if( firstDiff == xx encoded.count )
-                log( "Encoded OK.\n" );
-            else
+            //encodedOk, encoded := QOIEncode( qoiDesc.rawData, qoiDesc );
+            encodedOk, encoded := QOIEncode( xx rawInput, qoiDesc );
+            if( !encodedOk )
             {
-                log( "Encoded contents differ at byte %\n", firstDiff );
-                equal = false;
+                log( "Error: Failed encoding image data\n" );
+                return false;
             }
-        }
-        else
+            defer free( encoded.data );
+
+            encodedPath := tprint( "%.test", filepath );
+            write_entire_file( encodedPath, encoded.data, encoded.count );
+
+            log( "Encoded size: % / Target size: %\n", encoded.count, input.count );
+            if( encoded.count == input.count )
+            {
+                firstDiff := first_different_byte( encoded.data, input.data, xx encoded.count ); 
+                if( firstDiff == xx encoded.count )
+                    log( "Encoded OK.\n" );
+                else
+                {
+                    log( "Encoded contents differ at byte %\n", firstDiff );
+                    equal = false;
+                }
+            }
+            else
             equal = false;
+        }
     }
 
     <<successCount += xx equal;
@@ -150,5 +199,6 @@ Args :: struct
 #import "Command_Line";
 #import "Bit_Operations";
 #import "File_Utilities";
+#import "stb_image";
 
 #load "qoi.jai";
