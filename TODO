@@ -1,3 +1,6 @@
 
 - Make a metaprogram that downloads the benchmark images suite from https://qoiformat.org/benchmark/ and runs either the source benchmark or a ported version and displays the results
+- Do premultiplied alpha as the msb on the colorspace attribute (see https://github.com/phoboslab/qoi/issues/181)
+
+- Check https://github.com/nigeltao/qoi2-bikeshed for possible future extensions (in particular check what they say, if anything, about pre-multiplied alpha)
 
