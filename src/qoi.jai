@@ -278,6 +278,20 @@ QOIEncode :: ( input: []u8, desc: QOIDesc ) -> ok: bool, encodedOut: []u8
         {
             if( run > 0 )
             {
+                #if 0
+                {
+                    // TODO Fix edgecase
+                    // In the case of a file starting with a run op, the ref encoder doesn't
+                    // ever store the first seen pixel
+                    // This is not really necessary for round-tripping correctly though
+                    // and it adds more branching, so not sure what to make of it
+                    if( tgt == encodedOut.data )
+                    {
+                        index := (px_prev.r * 3 + px_prev.g * 5 + px_prev.b * 7 + px_prev.a * 11) & 0x3F;
+                        seen[index] = px_prev;
+                    }
+                }
+
                 <<tgt = QOI_OP_RUN | (run - 1);
                 tgt += 1;
                 run = 0;

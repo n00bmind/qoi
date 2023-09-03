@@ -3,9 +3,8 @@ TestPath :: ( filepath: string, successCount: *int, totalCount: *int ) -> bool
 {
     <<totalCount += 1;
 
-    pngPath := tprint( "%.png", filepath );
-    rawPath := tprint( "%.raw", filepath );
-    log( "-> Comparing file % against % and %..\n", filepath, pngPath, rawPath );
+    pngPath := tprint( "%.png", path_strip_extension( filepath ) );
+    log( "-> Comparing file % against %..\n", filepath, pngPath );
 
     w, h, channels: s32;
     rawDataBlock := stbi_load( temp_c_string( pngPath ), *w, *h, *channels, 0 );
@@ -16,14 +15,14 @@ TestPath :: ( filepath: string, successCount: *int, totalCount: *int ) -> bool
     }
     defer stbi_image_free( rawDataBlock );
 
-    // TODO Is there syntax for this?
-    //rawData: []u8 = { rawDataBlock, w * h * channels };
+    log( "Image info as reported by stbi_image: W: %, H: %, channels: %\n", w, h, channels );
+
     rawData: []u8;
     rawData.data = rawDataBlock;
     rawData.count = w * h * channels;
-    pngDesc := QOIDesc.{ width = w, height = h, channels = xx channels };
+    encodedDesc := QOIDesc.{ width = w, height = h, channels = xx channels };
 
-    encodedOk, encoded := QOIEncode( rawData, pngDesc );
+    encodedOk, encoded := QOIEncode( rawData, encodedDesc );
     if( !encodedOk )
     {
         log( "Error: Failed encoding image data\n" );
@@ -56,47 +55,47 @@ TestPath :: ( filepath: string, successCount: *int, totalCount: *int ) -> bool
     }
 
 
-    if( !equal )
-        return false;
-
-
-    rawInput, rawInputOk := read_entire_file( rawPath, false, false );
-    if( !rawInputOk )
+    #if 0
     {
-        log( "Error: Couldn't open '%' for reading\n", rawPath );
-        return false;
+        rawPath := tprint( "%.raw", filepath );
+        rawInput, rawInputOk := read_entire_file( rawPath, false, false );
+        if( !rawInputOk )
+        {
+            log( "Error: Couldn't open '%' for reading\n", rawPath );
+            return false;
+        }
+        defer free( rawInput.data );
     }
-    defer free( rawInput.data );
 
-    decodedOk, qoiDesc := QOIDecode( xx qoiInput, xx rawInput );
+    decodedOk, decodedDesc := QOIDecode( encoded );
     if( !decodedOk )
     {
         log( "Error: Failed decoding image data\n" );
         return false;
     }
-    defer free( qoiDesc.rawData.data );
+    defer free( decodedDesc.rawData.data );
 
-    // Compare
-    decodedSize := qoiDesc.rawData.count;
-    log( "Decoded size: % / Target size: %\n", decodedSize, rawInput.count );
+    // Compare roundtripped image against raw data returned from stb_image
+    decodedSize := decodedDesc.rawData.count;
+    log( "Decoded size: % / Target size: %\n", decodedSize, rawData.count );
 
     equal = true;
-    if decodedSize == rawInput.count
+    if decodedSize == rawData.count
     {
-        src := qoiDesc.rawData.data;
-        tgt := rawInput.data;
-        for 0 .. qoiDesc.width * qoiDesc.height - 1
+        src := decodedDesc.rawData.data;
+        tgt := rawData.data;
+        for 0 .. decodedDesc.width * decodedDesc.height - 1
         {
-            if !bits_equal( src + it, tgt + it, qoiDesc.channels )
+            if !bits_equal( src + it, tgt + it, decodedDesc.channels )
             {
-                if( qoiDesc.channels == 3 )
+                if( decodedDesc.channels == 3 )
                 {
                     log( "Pixel #% differs: want { %, %, % }, have { %, %, % }\n",
                          it, tgt[it + 0], tgt[it + 1], tgt[it + 2], src[it + 0], src[it + 1], src[it + 2] );
                 }
                 else
                 {
-                    assert( qoiDesc.channels == 4, "Unsupported channel count: %\n", qoiDesc.channels );
+                    assert( decodedDesc.channels == 4, "Unsupported channel count: %\n", decodedDesc.channels );
                     log( "Pixel #% differs: want { %, %, %, % }, have { %, %, %, % }\n",
                          it, tgt[it + 0], tgt[it + 1], tgt[it + 2], tgt[it + 3], src[it + 0], src[it + 1], src[it + 2], src[it + 3] );
                 }
@@ -108,41 +107,8 @@ TestPath :: ( filepath: string, successCount: *int, totalCount: *int ) -> bool
     else
         equal = false;
 
-
-    #if false
-    {
-        if equal
-        {
-            log( "Decoded OK.\n" );
-
-            //encodedOk, encoded := QOIEncode( qoiDesc.rawData, qoiDesc );
-            encodedOk, encoded := QOIEncode( xx rawInput, qoiDesc );
-            if( !encodedOk )
-            {
-                log( "Error: Failed encoding image data\n" );
-                return false;
-            }
-            defer free( encoded.data );
-
-            encodedPath := tprint( "%.test", filepath );
-            write_entire_file( encodedPath, encoded.data, encoded.count );
-
-            log( "Encoded size: % / Target size: %\n", encoded.count, input.count );
-            if( encoded.count == input.count )
-            {
-                firstDiff := first_different_byte( encoded.data, input.data, xx encoded.count ); 
-                if( firstDiff == xx encoded.count )
-                    log( "Encoded OK.\n" );
-                else
-                {
-                    log( "Encoded contents differ at byte %\n", firstDiff );
-                    equal = false;
-                }
-            }
-            else
-            equal = false;
-        }
-    }
+    if equal
+        log( "Decoded OK.\n" );
 
     <<successCount += xx equal;
     return equal;
