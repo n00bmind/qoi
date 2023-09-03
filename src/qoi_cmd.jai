@@ -22,7 +22,7 @@ TestPath :: ( filepath: string, successCount: *int, totalCount: *int ) -> bool
     rawData.count = w * h * channels;
     encodedDesc := QOIDesc.{ width = w, height = h, channels = xx channels };
 
-    encodedOk, encoded := QOIEncode( rawData, encodedDesc );
+    encodedOk, encoded := QOIEncode( encodedDesc, rawData );
     if( !encodedOk )
     {
         log( "Error: Failed encoding image data\n" );

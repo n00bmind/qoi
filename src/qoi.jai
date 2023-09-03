@@ -185,24 +185,25 @@ QOIDecode :: ( input: []u8, reference: []u8 = .[] ) -> ok: bool, desc: QOIDesc
 
 QOIRead :: ( path: string, reference: []u8 = .[] ) -> bool, QOIDesc
 {
-    result: QOIDesc;
+    contentStr, readOk := read_entire_file( path, false, true );
+    defer free( contentStr.data );
 
-    contentStr, ok := read_entire_file( path, false, true );
-    if ok
-        ok, result = QOIDecode( cast([]u8)contentStr, reference );
+    if readOk
+    {
+        decodedOk, desc := QOIDecode( xx contentStr, reference );
+        if( decodedOk )
+            return true, desc;
+    }
     else
     {
-        log( "Couldn't open '%' for reading.\n", path );
-        ok = false;
+        log( "Couldn't open '%' for reading\n", path );
     }
 
-    free( contentStr.data );
-
-    return ok, result;
+    return false, .{};
 }
 
 
-QOIEncode :: ( input: []u8, desc: QOIDesc ) -> ok: bool, encodedOut: []u8
+QOIEncode :: ( desc: QOIDesc, input: []u8 ) -> ok: bool, encodedOut: []u8
 {
     if !input
     {
@@ -280,7 +281,7 @@ QOIEncode :: ( input: []u8, desc: QOIDesc ) -> ok: bool, encodedOut: []u8
             {
                 #if 0
                 {
-                    // TODO Fix edgecase
+                    // TODO Fix edgecase as explained in https://github.com/phoboslab/qoi/issues/253
                     // In the case of a file starting with a run op, the ref encoder doesn't
                     // ever store the first seen pixel
                     // This is not really necessary for round-tripping correctly though
@@ -372,9 +373,22 @@ QOIEncode :: ( input: []u8, desc: QOIDesc ) -> ok: bool, encodedOut: []u8
     return true, encodedOut;
 }
 
+QOIWrite :: ( path: string, desc: QOIDesc, input: []u8 ) -> ok: bool
+{
+    encodedOk, encoded := QOIEncode( desc, input );
+    defer free( encoded.data );
 
-// TODO QOIWrite
-// TODO QOIWrite
+    if( encodedOk )
+    {
+        writtenOk := write_entire_file( path, encoded.data, encoded.count );
+        if( writtenOk )
+            return true;
+        else
+            log( "Failed writing encoded data to '%'\n", path );
+    }
+
+    return false;
+}
 
 
 #scope_file
