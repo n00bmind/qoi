@@ -119,38 +119,61 @@ successCount, totalCount: int;
 
 main :: ()
 {
+    args := get_command_line_arguments();
+    defer array_free(args);
+
     helpSwitches := string.["h", "help", "?"];
-    argsOk, args, isSet, freeArgs := parse_arguments( Args, Default_Argument_Flags | .SHOW_HELP_ON_ERROR, helpSwitches );
+    argsOk, parsedArgs, isSet, freeArgs := parse_arguments( Args, Default_Argument_Flags | .SHOW_HELP_ON_ERROR, helpSwitches );
 
     if !argsOk
     {
         exit( 1 );
     }
 
-    if freeArgs.count < 1
+    if args.count < 2
     {
-        print( "Need a file / folder path to open\n" );
+        print( "Need a command to execute\n" );
+        // TODO Print all commands
         exit( 1 );
     }
 
     print( "Working directory: %\n", get_working_directory() );
 
-    path := freeArgs[0];
-    if is_directory( path )
+    cmd := freeArgs[0];
+    // TODO Do these two actually point to the same place?
+    if( cmd != args[1] )
     {
-        visitor :: (info : *File_Visit_Info, data : *void)
+        print( "First argument must be a command to execute\n" );
+        // TODO Print all commands
+        exit( 1 );
+    }
+
+    to_lower_in_place( cmd );
+    if( equal( cmd, "test" ) )
+    {
+        if( freeArgs.count < 2 )
         {
-            if info.is_directory || path_extension( info.full_name ) != "qoi"
-                return;
-            TestPath( info.full_name, *successCount, *totalCount );
+            print( "Need a directory or file path to test\n" );
+            exit( 1 );
         }
 
-        visit_files( path, true, null, visitor );
-    }
-    else
+        path := freeArgs[1];
+        if is_directory( path )
+        {
+            visitor :: (info : *File_Visit_Info, data : *void)
+            {
+                if info.is_directory || path_extension( info.full_name ) != "qoi"
+                    return;
+                TestPath( info.full_name, *successCount, *totalCount );
+            }
+
+            visit_files( path, true, null, visitor );
+        }
+        else
         TestPath( path, *successCount, *totalCount );
 
-    print( "\n% files processed, % OK.\n", totalCount, successCount );
+        print( "\n% files processed, % OK.\n", totalCount, successCount );
+    }
 }
 
 Args :: struct
