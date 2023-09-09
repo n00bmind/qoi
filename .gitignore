@@ -1,6 +1,7 @@
 *.swp
 *.exe
-.build/
 bin/
+tests/
+.build/
 *.rdbg
 *.vim

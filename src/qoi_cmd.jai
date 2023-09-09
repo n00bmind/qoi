@@ -1,3 +1,12 @@
+PrintUsage :: ()
+{
+    USAGE_STR :: #string STR
+Usage:
+    qoi.exe <src_file> <target_file>
+    qoi.exe -test <path>
+STR
+    print( "%\n", USAGE_STR );
+}
 
 TestPath :: ( filepath: string, successCount: *int, totalCount: *int ) -> bool
 {
@@ -67,22 +76,22 @@ TestPath :: ( filepath: string, successCount: *int, totalCount: *int ) -> bool
         defer free( rawInput.data );
     }
 
-    decodedOk, decodedDesc := QOIDecode( encoded );
+    decodedOk, decoded, decodedDesc := QOIDecode( encoded );
     if( !decodedOk )
     {
         log( "Error: Failed decoding image data\n" );
         return false;
     }
-    defer free( decodedDesc.rawData.data );
+    defer free( decoded.data );
 
     // Compare roundtripped image against raw data returned from stb_image
-    decodedSize := decodedDesc.rawData.count;
+    decodedSize := decoded.count;
     log( "Decoded size: % / Target size: %\n", decodedSize, rawData.count );
 
     equal = true;
     if decodedSize == rawData.count
     {
-        src := decodedDesc.rawData.data;
+        src := decoded.data;
         tgt := rawData.data;
         for 0 .. decodedDesc.width * decodedDesc.height - 1
         {
@@ -125,39 +134,17 @@ main :: ()
     helpSwitches := string.["h", "help", "?"];
     argsOk, parsedArgs, isSet, freeArgs := parse_arguments( Args, Default_Argument_Flags | .SHOW_HELP_ON_ERROR, helpSwitches );
 
-    if !argsOk
+    if( !argsOk || args.count < 3 || freeArgs.count < 1 )
     {
+        PrintUsage();
         exit( 1 );
     }
 
-    if args.count < 2
+    if( parsedArgs.test )
     {
-        print( "Need a command to execute\n" );
-        // TODO Print all commands
-        exit( 1 );
-    }
+        log( "Working directory: %\n", get_working_directory() );
 
-    print( "Working directory: %\n", get_working_directory() );
-
-    cmd := freeArgs[0];
-    // TODO Do these two actually point to the same place?
-    if( cmd != args[1] )
-    {
-        print( "First argument must be a command to execute\n" );
-        // TODO Print all commands
-        exit( 1 );
-    }
-
-    to_lower_in_place( cmd );
-    if( equal( cmd, "test" ) )
-    {
-        if( freeArgs.count < 2 )
-        {
-            print( "Need a directory or file path to test\n" );
-            exit( 1 );
-        }
-
-        path := freeArgs[1];
+        path := freeArgs[0];
         if is_directory( path )
         {
             visitor :: (info : *File_Visit_Info, data : *void)
@@ -172,13 +159,88 @@ main :: ()
         else
         TestPath( path, *successCount, *totalCount );
 
-        print( "\n% files processed, % OK.\n", totalCount, successCount );
+        log( "\n% files processed, % OK.\n", totalCount, successCount );
+    }
+    else
+    {
+        if( freeArgs.count < 2 )
+        {
+            PrintUsage();
+            exit( 1 );
+        }
+
+        inPath := freeArgs[0];
+        inExt, inExtFound := path_extension( inPath );
+        inQOI := false;
+
+        readBuffer: []u8;
+        readDataBlock: *u8;
+        w, h, channels: s32;
+        if( inExtFound && equal( inExt, "qoi" ) )
+        {
+            readOk, readBuffer=, readDesc := QOIRead( inPath );
+            if( !readOk )
+                exit( 1 );
+
+            w = xx readDesc.width;
+            h = xx readDesc.height;
+            channels = xx readDesc.channels;
+            inQOI = true;
+        }
+        else
+        {
+            readDataBlock = stbi_load( temp_c_string( inPath ), *w, *h, *channels, 0 );
+            if( !readDataBlock )
+            {
+                log( "Error: Couldn't load source file '%'.", inPath, flags=.ERROR );
+                exit( 1 );
+            }
+
+            readBuffer.data = readDataBlock;
+            readBuffer.count = w * h * channels;
+        }
+
+        defer ifx inQOI free( readBuffer.data ) else stbi_image_free( readDataBlock );  
+
+
+        outPath := freeArgs[1];
+        outExt, outExtFound := path_extension( outPath );
+
+        writeOk := false;
+        if( outExtFound && equal( outExt, "qoi" ) )
+        {
+            outDesc := QOIDesc.{ width = w, height = h, channels = xx channels };
+
+            writeOk = QOIWrite( outPath, outDesc, readBuffer );
+        }
+        else
+        {
+            name := temp_c_string( outPath );
+
+            if outExt ==
+            {
+                case "png"; 
+                    writeOk = stbi_write_png( name, w, h, channels, readBuffer.data, w * channels ) != 0;
+                case "tga";
+                    writeOk = stbi_write_tga( name, w, h, channels, readBuffer.data ) != 0;
+                case "bmp";
+                    writeOk = stbi_write_bmp( name, w, h, channels, readBuffer.data ) != 0;
+                case "hdr";
+                    writeOk = stbi_write_hdr( name, w, h, channels, readBuffer.data ) != 0;
+                case "jpg";
+                    writeOk = stbi_write_jpg( name, w, h, channels, readBuffer.data, quality=80 ) != 0;
+                case;
+                    log( "Extension '%' is not supported.", outExt, flags=.ERROR );
+            }
+        }
+
+        exit( xx ifx writeOk 0 else 1 );
     }
 }
 
 Args :: struct
 {
-
+    test: bool;     @"?Perform a round-trip test on either a single .qoi file or a directory (each .qoi file needs an accompanying .png)"
 }
 
 #scope_file
@@ -189,5 +251,6 @@ Args :: struct
 #import "Bit_Operations";
 #import "File_Utilities";
 #import "stb_image";
+#import "stb_image_write";
 
 #load "qoi.jai";
