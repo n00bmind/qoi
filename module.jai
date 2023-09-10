@@ -1,2 +1,2 @@
-#load src/qoi.jai;
+#load "src/qoi.jai;"
 
