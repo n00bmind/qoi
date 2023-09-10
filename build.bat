@@ -1,2 +1,2 @@
-jai src/build.jai
+jai build.jai
 
