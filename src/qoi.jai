@@ -394,6 +394,7 @@ QOIWrite :: ( path: string, desc: QOIDesc, input: []u8 ) -> ok: bool
 
 #import "Basic";
 #import "File";
+#import "Bit_Operations";
 
 QOIHeader :: struct
 {
