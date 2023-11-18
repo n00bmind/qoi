@@ -225,8 +225,6 @@ main :: ()
                     writeOk = stbi_write_tga( name, w, h, channels, readBuffer.data ) != 0;
                 case "bmp";
                     writeOk = stbi_write_bmp( name, w, h, channels, readBuffer.data ) != 0;
-                case "hdr";
-                    writeOk = stbi_write_hdr( name, w, h, channels, readBuffer.data ) != 0;
                 case "jpg";
                     writeOk = stbi_write_jpg( name, w, h, channels, readBuffer.data, quality=80 ) != 0;
                 case;
